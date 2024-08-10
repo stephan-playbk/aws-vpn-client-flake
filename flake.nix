@@ -22,7 +22,7 @@
 
         nixosModules = rec {
           default = awsvpnclient;
-          awsvpnclient = import ./module.nix { inherit pkgs inputs system; };
+          awsvpnclient = import ./module.nix { inherit inputs system; };
         };
       });
 }
