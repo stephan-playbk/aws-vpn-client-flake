@@ -1,11 +1,12 @@
 { lib, pkgs, stdenv, fetchurl, buildFHSEnv, autoPatchelfHook, copyDesktopItems
-, makeDesktopItem, libredirect, ... }:
+, makeDesktopItem, libredirect, config, ... }:
 
 let
+  cfg = config.programs.awsvpnclient or { };
+  defaultVersion = import ./version.nix;
   pname = "awsvpnclient";
-  versionInfo = import ./version.nix;
-  srcVersion = versionInfo.version;
-  srcHash = versionInfo.sha256;
+  srcVersion = cfg.version or defaultVersion.version;
+  srcHash = cfg.sha256 or defaultVersion.sha256;
   srcUrl =
     "https://d20adtppz83p9s.cloudfront.net/GTK/${srcVersion}/awsvpnclient_amd64.deb";
 

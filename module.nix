@@ -4,9 +4,23 @@
 
 with lib;
 
-let cfg = config.programs.awsvpnclient;
+let
+  cfg = config.programs.awsvpnclient;
+  defaultVersion = import ./version.nix;
 in {
-  options.programs.awsvpnclient.enable = mkEnableOption "Enable AWS VPN Client";
+  options.programs.awsvpnclient = {
+    enable = mkEnableOption "Enable AWS VPN Client";
+    version = mkOption {
+      type = types.str;
+      default = defaultVersion.version;
+      description = "Version of the AWS VPN Client to build/install";
+    };
+    sha256 = mkOption {
+      type = types.str;
+      default = defaultVersion.sha256;
+      description = "SHA256 hash of the AWS VPN Client to build/install";
+    };
+  };
 
   config = mkIf cfg.enable {
     environment.systemPackages =
