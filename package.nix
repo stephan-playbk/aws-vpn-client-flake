@@ -160,4 +160,9 @@ let
         cp "${desktopItem}/share/applications/${pname}.desktop" "$out/share/applications/${pname}.desktop"
       '';
     };
-in lib.makeOverridable guiFHS (import ./version.nix)
+
+  # Why do I gotta make my own thing? .override doesn't work!?
+  makeOverridable = f: origArgs:
+    let origRes = f origArgs;
+    in origRes // { overrideVersion = newArgs: (f newArgs); };
+in makeOverridable guiFHS (import ./version.nix)

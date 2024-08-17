@@ -20,6 +20,26 @@ systemd.packages = [ aws-vpn-client.packages.x86_64-linux.awsvpnclient ];
 systemd.services.AwsVpnClientService.wantedBy = [ "multi-user.target" ];
 ```
 
+### Override the version
+
+```nix
+programs.awsvpnclient.enable = true;
+programs.awsvpnclient.version = "3.15.0";
+programs.awsvpnclient.sha256 = "5cf3eb08de96821b0ad3d0c93174b2e308041d5490a3edb772dfd89a6d89d012";
+```
+
+OR 
+
+
+```nix
+let awsVpnClient = aws-vpn-client.packages.x86_64-linux.awsvpnclient.overrideVersion {version = "3.15.0"; sha256 = "5cf3eb08de96821b0ad3d0c93174b2e308041d5490a3edb772dfd89a6d89d012"; };
+environment.systemPackages = [ awsVpnClient ];
+systemd.packages = [ awsVpnClient ];
+systemd.services.AwsVpnClientService.wantedBy = [ "multi-user.target" ];
+```
+
+#### Using the 
+
 ### Build locally
 ```shell
 # Insecure because of its usage of `openssl-1.1.1w`

@@ -7,7 +7,7 @@ with lib;
 let
   cfg = config.programs.awsvpnclient;
   defaultVersion = import ./version.nix;
-  package = (inputs.self.packages.${system}.awsvpnclient.override {
+  package = (inputs.self.packages.${system}.awsvpnclient.overrideVersion {
     inherit (cfg) version sha256;
   });
 in {
