@@ -1,14 +1,11 @@
 { lib, pkgs, stdenv, fetchurl, buildFHSEnv, autoPatchelfHook, copyDesktopItems
-, makeDesktopItem, libredirect, config, ... }:
+, makeDesktopItem, libredirect, ... }:
 
 let
-  cfg = config.programs.awsvpnclient or { };
-  defaultVersion = import ./version.nix;
   pname = "awsvpnclient";
-  srcVersion = cfg.version or defaultVersion.version;
-  srcHash = cfg.sha256 or defaultVersion.sha256;
-  srcUrl =
-    "https://d20adtppz83p9s.cloudfront.net/GTK/${srcVersion}/awsvpnclient_amd64.deb";
+
+  srcUrl = versionInfo:
+    "https://d20adtppz83p9s.cloudfront.net/GTK/${versionInfo.version}/awsvpnclient_amd64.deb";
 
   exePrefix = "/opt/awsvpnclient";
   debGuiExe = "${exePrefix}/AWS VPN Client";
@@ -59,100 +56,108 @@ let
     }
   ];
 
-  deb = stdenv.mkDerivation ({
-    pname = "${pname}-deb";
-    version = srcVersion;
+  mkDeb = versionInfo:
+    stdenv.mkDerivation ({
+      pname = "${pname}-deb";
+      version = versionInfo.version;
 
-    src = fetchurl {
-      url = srcUrl;
-      sha256 = srcHash;
+      src = fetchurl {
+        url = srcUrl versionInfo;
+        sha256 = versionInfo.sha256;
+      };
+
+      nativeBuildInputs = [ autoPatchelfHook pkgs.makeWrapper ];
+
+      unpackPhase = ''
+        ${pkgs.dpkg}/bin/dpkg -x "$src" unpacked
+        mkdir -p "$out"
+        cp -r unpacked/* "$out/"
+        addAutoPatchelfSearchPath "$out/${exePrefix}"
+        addAutoPatchelfSearchPath "$out/${exePrefix}/Service"
+        addAutoPatchelfSearchPath "$out/${exePrefix}/Service/Resources/openvpn"
+      '';
+
+      fixupPhase = ''
+        # Workaround for missing compatibility of the SQL library, intentionally breaking the metrics agent
+        # It will be unable to load the dynamic lib and will start, but with error message
+        rm "$out/opt/awsvpnclient/SQLite.Interop.dll"
+
+        # Apply source patches
+        cd "$out/opt/awsvpnclient"
+        ${lib.concatStringsSep "\n" (map (patch: ''
+          cp ${patch} tmp.patch
+          sed -i -E 's|([+-]{3}) (\")?/opt/awsvpnclient/|\1 \2./|g' tmp.patch
+          patch -p1 < tmp.patch
+          rm tmp.patch
+        '') fetchedPatches)}
+        cd "$out"
+
+        # Rename to something more "linux-y"
+        mv "$out/${debGuiExe}" "$out/${guiExe}"
+
+        ${wrapExeWithRedirects "$out/${serviceExe}"}
+      '';
+    });
+
+  mkServiceFHS = { versionInfo, deb }:
+    buildFHSEnv {
+      name = "${pname}-service-wrapped";
+      version = versionInfo.version;
+
+      runScript = "${serviceExe}";
+      targetPkgs = _: [ deb ];
+
+      extraBwrapArgs = [
+        # Service exe uses this as it's temp directory
+        "--tmpfs /opt/awsvpnclient/Resources"
+
+        # For some reason, I can't do this with the redirect as I did above
+        "--tmpfs /sbin"
+        "--ro-bind /${pkgs.iproute2}/bin/ip /sbin/ip"
+      ];
+
+      multiPkgs = _: with pkgs; [ openssl_1_1 icu70 ];
     };
 
-    nativeBuildInputs = [ autoPatchelfHook pkgs.makeWrapper ];
+  mkDesktopItem = { versionInfo, deb }:
+    (makeDesktopItem {
+      name = pname;
+      desktopName = "AWS VPN Client";
+      exec = "${(guiFHS versionInfo).name} %u";
+      icon = "${deb}/usr/share/pixmaps/acvc-64.png";
+      categories = [ "Network" "X-VPN" ];
+    });
 
-    unpackPhase = ''
-      ${pkgs.dpkg}/bin/dpkg -x "$src" unpacked
-      mkdir -p "$out"
-      cp -r unpacked/* "$out/"
-      addAutoPatchelfSearchPath "$out/${exePrefix}"
-      addAutoPatchelfSearchPath "$out/${exePrefix}/Service"
-      addAutoPatchelfSearchPath "$out/${exePrefix}/Service/Resources/openvpn"
-    '';
+  guiFHS = versionInfo:
+    let
+      deb = mkDeb versionInfo;
+      serviceFHS = (mkServiceFHS { inherit versionInfo deb; });
+      desktopItem = (mkDesktopItem { inherit versionInfo deb; });
+    in buildFHSEnv {
+      name = "${pname}-wrapped";
+      version = versionInfo.version;
 
-    fixupPhase = ''
-      # Workaround for missing compatibility of the SQL library, intentionally breaking the metrics agent
-      # It will be unable to load the dynamic lib and will start, but with error message
-      rm "$out/opt/awsvpnclient/SQLite.Interop.dll"
+      runScript = "${guiExe}";
+      targetPkgs = _: [ deb ];
 
-      # Apply source patches
-      cd "$out/opt/awsvpnclient"
-      ${lib.concatStringsSep "\n" (map (patch: ''
-        cp ${patch} tmp.patch
-        sed -i -E 's|([+-]{3}) (\")?/opt/awsvpnclient/|\1 \2./|g' tmp.patch
-        patch -p1 < tmp.patch
-        rm tmp.patch
-      '') fetchedPatches)}
-      cd "$out"
+      multiPkgs = _: with pkgs; [ openssl_1_1 icu70 gtk3 ];
 
-      # Rename to something more "linux-y"
-      mv "$out/${debGuiExe}" "$out/${guiExe}"
+      extraInstallCommands = ''
+        mkdir -p "$out/lib/systemd/system"
+        cat <<EOF > "$out/lib/systemd/system/AwsVpnClientService.service"
+        [Service]
+        Type=simple
+        ExecStart=${serviceFHS}/bin/${serviceFHS.name}
+        Restart=always
+        RestartSec=1s
+        User=root
 
-      ${wrapExeWithRedirects "$out/${serviceExe}"}
-    '';
-  });
+        [Install]
+        WantedBy=multi-user.target
+        EOF
 
-  serviceFHS = buildFHSEnv {
-    name = "${pname}-service-wrapped";
-    version = srcVersion;
-
-    runScript = "${serviceExe}";
-    targetPkgs = _: [ deb ];
-
-    extraBwrapArgs = [
-      # Service exe uses this as it's temp directory
-      "--tmpfs /opt/awsvpnclient/Resources"
-
-      # For some reason, I can't do this with the redirect as I did above
-      "--tmpfs /sbin"
-      "--ro-bind /${pkgs.iproute2}/bin/ip /sbin/ip"
-    ];
-
-    multiPkgs = _: with pkgs; [ openssl_1_1 icu70 ];
-  };
-
-  desktopItem = (makeDesktopItem {
-    name = pname;
-    desktopName = "AWS VPN Client";
-    exec = "${guiFHS.name} %u";
-    icon = "${deb}/usr/share/pixmaps/acvc-64.png";
-    categories = [ "Network" "X-VPN" ];
-  });
-
-  guiFHS = buildFHSEnv {
-    name = "${pname}-wrapped";
-    version = srcVersion;
-
-    runScript = "${guiExe}";
-    targetPkgs = _: [ deb ];
-
-    multiPkgs = _: with pkgs; [ openssl_1_1 icu70 gtk3 ];
-
-    extraInstallCommands = ''
-      mkdir -p "$out/lib/systemd/system"
-      cat <<EOF > "$out/lib/systemd/system/AwsVpnClientService.service"
-      [Service]
-      Type=simple
-      ExecStart=${serviceFHS}/bin/${serviceFHS.name}
-      Restart=always
-      RestartSec=1s
-      User=root
-
-      [Install]
-      WantedBy=multi-user.target
-      EOF
-
-      mkdir -p "$out/share/applications"
-      cp "${desktopItem}/share/applications/${pname}.desktop" "$out/share/applications/${pname}.desktop"
-    '';
-  };
-in guiFHS
+        mkdir -p "$out/share/applications"
+        cp "${desktopItem}/share/applications/${pname}.desktop" "$out/share/applications/${pname}.desktop"
+      '';
+    };
+in lib.makeOverridable guiFHS (import ./version.nix)

@@ -25,7 +25,10 @@ in {
   config = mkIf cfg.enable {
     environment.systemPackages =
       [ inputs.self.packages.${system}.awsvpnclient ];
-    systemd.packages = [ inputs.self.packages.${system}.awsvpnclient ];
+    systemd.packages = [
+      inputs.self.packages.${system}.awsvpnclient.override
+      { inherit (cfg) version sha256; }
+    ];
 
     # Even though the service already defines this, nixos doesn't pick that up and leaves the service disabled
     systemd.services.AwsVpnClientService.wantedBy = [ "multi-user.target" ];
