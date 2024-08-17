@@ -107,13 +107,32 @@ let
       runScript = "${serviceExe}";
       targetPkgs = _: [ deb ];
 
-      extraBwrapArgs = [
+      extraBwrapArgs = let
+        ipBin = pkgs.writeShellScript "fix_aws_ip_call.sh" ''
+          args=("$@")
+          arg1=''${args[0]}
+          arg2=''${args[1]}
+          arg3=''${args[2]}
+          arg4=''${args[3]}
+          arg5=''${args[4]}
+          arg6=''${args[5]}
+
+          # expected args: 'addr' 'add' 'dev' 'tun0' <ip> 'broadcast' <ip>
+          # if 'broadcast' is missing, calculate it
+          if [ "$arg1" = 'addr' ] && [ "$arg2" = 'add' ] && [ "$arg3" = 'dev' ] && [ "$arg4" = 'tun0' ] && [ -z "$arg6" ]; then
+            export $(${pkgs.ipcalc}/bin/ipcalc $arg5 -b)
+            ${pkgs.iproute2}/bin/ip "''${args[@]}" broadcast $BROADCAST
+          else
+            ${pkgs.iproute2}/bin/ip "$@"
+          fi
+        '';
+      in [
         # Service exe uses this as it's temp directory
         "--tmpfs /opt/awsvpnclient/Resources"
 
         # For some reason, I can't do this with the redirect as I did above
         "--tmpfs /sbin"
-        "--ro-bind /${pkgs.iproute2}/bin/ip /sbin/ip"
+        "--ro-bind ${ipBin} /sbin/ip"
       ];
 
       multiPkgs = _: with pkgs; [ openssl_1_1 icu70 ];
@@ -164,5 +183,5 @@ let
   # Why do I gotta make my own thing? .override doesn't work!?
   makeOverridable = f: origArgs:
     let origRes = f origArgs;
-    in origRes // { overrideVersion = newArgs: (f newArgs); };
+    in origRes // { overrideVersion = newArgs: (f (origArgs // newArgs)); };
 in makeOverridable guiFHS (import ./version.nix)
