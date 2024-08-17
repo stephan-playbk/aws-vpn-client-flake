@@ -7,6 +7,9 @@ with lib;
 let
   cfg = config.programs.awsvpnclient;
   defaultVersion = import ./version.nix;
+  package = (inputs.self.packages.${system}.awsvpnclient.override {
+    inherit (cfg) version sha256;
+  });
 in {
   options.programs.awsvpnclient = {
     enable = mkEnableOption "Enable AWS VPN Client";
@@ -23,12 +26,8 @@ in {
   };
 
   config = mkIf cfg.enable {
-    environment.systemPackages =
-      [ inputs.self.packages.${system}.awsvpnclient ];
-    systemd.packages = [
-      inputs.self.packages.${system}.awsvpnclient.override
-      { inherit (cfg) version sha256; }
-    ];
+    environment.systemPackages = [ package ];
+    systemd.packages = [ package ];
 
     # Even though the service already defines this, nixos doesn't pick that up and leaves the service disabled
     systemd.services.AwsVpnClientService.wantedBy = [ "multi-user.target" ];
