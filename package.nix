@@ -137,7 +137,6 @@ let
         # For some reason, I can't do this with the redirect as I did above
         "--tmpfs /usr/sbin"
         "--ro-bind ${myIpBin} /usr/sbin/ip"
-        "--symlink /usr/sbin/ip /sbin/ip"
       ];
 
       multiPkgs = _:
