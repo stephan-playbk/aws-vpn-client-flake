@@ -79,6 +79,43 @@ let
     }
   ];
 
+  myOpenSsl = pkgs.openssl.overrideAttrs (orig: {
+    # Compile the FIPS module:
+    configureFlags = orig.configureFlags
+      ++ [ "enable-ec_nistp_64_gcc_128" "enable-fips" ];
+
+    # Also install the FIPS module:
+    installTargets = "install install_fips";
+
+    # Enable FIPS in the configuration files:
+    postInstall = (orig.postInstall or "") + ''
+      # Modify the original OpenSSL configuration:
+      sed -E \
+        -e "s|^# \.include fipsmodule\.cnf|.include $etc/etc/ssl/fipsmodule.cnf|" \
+        -e "s|^# fips =|fips =|" \
+        -e "/^fips =/a base = base_sec\n[base_sec]\nactivate = 1\n" \
+        < ${openssl.out}/etc/ssl/openssl.cnf > $etc/etc/ssl/openssl.cnf
+    '';
+
+    # Generate and patch the fipsmodule.cnf file.  It is done here
+    # because the MAC need to be computed *after* stripping the .so
+    # file.  Also need to use the original openssl binary because the
+    # postInstall step above broke this one until postFixup runs.
+    postFixup = (orig.postFixup or "") + ''
+      # Replace FIPS configuration file with one specific to the module
+      # we just built:
+      ${openssl.bin}/bin/openssl fipsinstall \
+        -out $etc/etc/ssl/fipsmodule.cnf \
+        -module $out/lib/ossl-modules/fips.so
+
+      # Then make it look more like Arch Linux:
+      sed -i -E \
+        -e '/^install-(mac|status)/d' \
+        -e '/^security-checks/a tls1-prf-ems-check = 0\ndrbg-no-trunc-md = 0' \
+        $etc/etc/ssl/fipsmodule.cnf
+    '';
+  });
+
   mkDeb = versionInfo:
     stdenv.mkDerivation ({
       pname = "${pname}-deb";
@@ -139,7 +176,7 @@ let
         "--ro-bind ${myIpBin} /usr/sbin/ip"
       ];
 
-      multiPkgs = _: with pkgs; [ openssl_1_1 icu70 ];
+      multiPkgs = _: with pkgs; [ myOpenSsl icu70 ];
     };
 
   mkDesktopItem = { versionInfo, deb }:
@@ -163,7 +200,7 @@ let
       runScript = "${guiExe}";
       targetPkgs = _: [ deb ];
 
-      multiPkgs = _: with pkgs; [ openssl_1_1 icu70 gtk3 ];
+      multiPkgs = _: with pkgs; [ myOpenSsl icu70 gtk3 ];
 
       extraBwrapArgs = [
         # For some reason, I can't do this with the redirect as I did above
