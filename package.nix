@@ -140,10 +140,10 @@ let
       ];
 
       multiPkgs = _:
-        with pkgs;
-        [
+        with pkgs; [
           # TODO: This still nessesary?
           #openssl_1_1
+          openssl
           icu70
         ];
     };
@@ -173,6 +173,7 @@ let
         with pkgs; [
           # TODO: This still nessesary?
           # openssl_1_1
+          openssl
 
           icu70
           gtk3
