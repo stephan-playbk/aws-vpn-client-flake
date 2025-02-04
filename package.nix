@@ -21,9 +21,9 @@ let
         }"
   '';
 
-  # https://github.com/BOPOHA/aws-rpm-packages/tree/d9df3adf679a7e0f04e13d493085b24dc80b9cc3
+  # https://github.com/BOPOHA/aws-rpm-packages/tree/438f57079cecbc07ce9d99af85430d6c777e62c6
   patchPrefix =
-    "https://raw.githubusercontent.com/BOPOHA/aws-rpm-packages/d9df3adf679a7e0f04e13d493085b24dc80b9cc3/awsvpnclient";
+    "https://raw.githubusercontent.com/BOPOHA/aws-rpm-packages/438f57079cecbc07ce9d99af85430d6c777e62c6/awsvpnclient";
   patchInfos = [
     {
       url = "${patchPrefix}/acvc.gtk..deps.patch";
@@ -41,6 +41,25 @@ let
       sha256 = patch.sha256;
     }) patchInfos;
 
+  myIpBin = pkgs.writeShellScript "fix_aws_ip_call.sh" ''
+    args=("$@")
+    arg1=''${args[0]}
+    arg2=''${args[1]}
+    arg3=''${args[2]}
+    arg4=''${args[3]}
+    arg5=''${args[4]}
+    arg6=''${args[5]}
+
+    # expected args: 'addr' 'add' 'dev' 'tun0' <ip> 'broadcast' <ip>
+    # if 'broadcast' is missing, calculate it
+    if [ "$arg1" = 'addr' ] && [ "$arg2" = 'add' ] && [ "$arg3" = 'dev' ] && [ "$arg4" = 'tun0' ] && [ -z "$arg6" ]; then
+      export $(${pkgs.ipcalc}/bin/ipcalc $arg5 -b)
+      ${pkgs.iproute2}/bin/ip "''${args[@]}" broadcast $BROADCAST
+    else
+      ${pkgs.iproute2}/bin/ip "$@"
+    fi
+  '';
+
   serviceRedirects = [
     {
       src = "${pkgs.ps}/bin/ps";
@@ -53,6 +72,10 @@ let
     {
       src = "${pkgs.sysctl}/bin/sysctl";
       dest = "/sbin/sysctl";
+    }
+    {
+      src = myIpBin;
+      dest = "/sbin/ip";
     }
   ];
 
@@ -87,7 +110,7 @@ let
         ${lib.concatStringsSep "\n" (map (patch: ''
           cp ${patch} tmp.patch
           sed -i -E 's|([+-]{3}) (\")?/opt/awsvpnclient/|\1 \2./|g' tmp.patch
-          patch -p1 < tmp.patch
+          patch -p1 < tmp.patch || cat *.rej
           rm tmp.patch
         '') fetchedPatches)}
         cd "$out"
@@ -107,35 +130,23 @@ let
       runScript = "${serviceExe}";
       targetPkgs = _: [ deb ];
 
-      extraBwrapArgs = let
-        ipBin = pkgs.writeShellScript "fix_aws_ip_call.sh" ''
-          args=("$@")
-          arg1=''${args[0]}
-          arg2=''${args[1]}
-          arg3=''${args[2]}
-          arg4=''${args[3]}
-          arg5=''${args[4]}
-          arg6=''${args[5]}
-
-          # expected args: 'addr' 'add' 'dev' 'tun0' <ip> 'broadcast' <ip>
-          # if 'broadcast' is missing, calculate it
-          if [ "$arg1" = 'addr' ] && [ "$arg2" = 'add' ] && [ "$arg3" = 'dev' ] && [ "$arg4" = 'tun0' ] && [ -z "$arg6" ]; then
-            export $(${pkgs.ipcalc}/bin/ipcalc $arg5 -b)
-            ${pkgs.iproute2}/bin/ip "''${args[@]}" broadcast $BROADCAST
-          else
-            ${pkgs.iproute2}/bin/ip "$@"
-          fi
-        '';
-      in [
+      extraBwrapArgs = [
         # Service exe uses this as it's temp directory
         "--tmpfs /opt/awsvpnclient/Resources"
 
         # For some reason, I can't do this with the redirect as I did above
         "--tmpfs /usr/sbin"
-        "--ro-bind ${ipBin} /usr/sbin/ip"
+        "--ro-bind ${myIpBin} /usr/sbin/ip"
+        "--symlink /usr/sbin/ip /sbin/ip"
       ];
 
-      multiPkgs = _: with pkgs; [ openssl_1_1 icu70 ];
+      multiPkgs = _:
+        with pkgs;
+        [
+          # TODO: This still nessesary?
+          #openssl_1_1
+          icu70
+        ];
     };
 
   mkDesktopItem = { versionInfo, deb }:
@@ -159,7 +170,20 @@ let
       runScript = "${guiExe}";
       targetPkgs = _: [ deb ];
 
-      multiPkgs = _: with pkgs; [ openssl_1_1 icu70 gtk3 ];
+      multiPkgs = _:
+        with pkgs; [
+          # TODO: This still nessesary?
+          # openssl_1_1
+
+          icu70
+          gtk3
+        ];
+
+      extraBwrapArgs = [
+        # For some reason, I can't do this with the redirect as I did above
+        "--tmpfs /usr/sbin"
+        "--ro-bind ${myIpBin} /usr/sbin/ip"
+      ];
 
       extraInstallCommands = ''
         mkdir -p "$out/lib/systemd/system"

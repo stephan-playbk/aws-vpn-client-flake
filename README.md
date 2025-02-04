@@ -38,11 +38,12 @@ systemd.packages = [ awsVpnClient ];
 systemd.services.AwsVpnClientService.wantedBy = [ "multi-user.target" ];
 ```
 
-#### Using the 
-
 ### Build locally
 ```shell
 # Insecure because of its usage of `openssl-1.1.1w`
 export NIXPKGS_ALLOW_INSECURE=1
 nix build --impure
 ```
+
+### Special thanks
+- https://github.com/BOPOHA/aws-rpm-packages
