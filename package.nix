@@ -79,6 +79,7 @@ let
     }
   ];
 
+  # https://github.com/NixOS/nixpkgs/issues/324013
   myOpenSsl = pkgs.openssl.overrideAttrs (orig: {
     # Compile the FIPS module:
     configureFlags = orig.configureFlags
@@ -94,7 +95,7 @@ let
         -e "s|^# \.include fipsmodule\.cnf|.include $etc/etc/ssl/fipsmodule.cnf|" \
         -e "s|^# fips =|fips =|" \
         -e "/^fips =/a base = base_sec\n[base_sec]\nactivate = 1\n" \
-        < ${openssl.out}/etc/ssl/openssl.cnf > $etc/etc/ssl/openssl.cnf
+        < ${pkgs.openssl.out}/etc/ssl/openssl.cnf > $etc/etc/ssl/openssl.cnf
     '';
 
     # Generate and patch the fipsmodule.cnf file.  It is done here
@@ -104,7 +105,7 @@ let
     postFixup = (orig.postFixup or "") + ''
       # Replace FIPS configuration file with one specific to the module
       # we just built:
-      ${openssl.bin}/bin/openssl fipsinstall \
+      ${pkgs.openssl.bin}/bin/openssl fipsinstall \
         -out $etc/etc/ssl/fipsmodule.cnf \
         -module $out/lib/ossl-modules/fips.so
 
