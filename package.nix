@@ -139,13 +139,7 @@ let
         "--ro-bind ${myIpBin} /usr/sbin/ip"
       ];
 
-      multiPkgs = _:
-        with pkgs; [
-          # TODO: This still nessesary?
-          #openssl_1_1
-          openssl
-          icu70
-        ];
+      multiPkgs = _: with pkgs; [ openssl_1_1 icu70 ];
     };
 
   mkDesktopItem = { versionInfo, deb }:
@@ -169,15 +163,7 @@ let
       runScript = "${guiExe}";
       targetPkgs = _: [ deb ];
 
-      multiPkgs = _:
-        with pkgs; [
-          # TODO: This still nessesary?
-          # openssl_1_1
-          openssl
-
-          icu70
-          gtk3
-        ];
+      multiPkgs = _: with pkgs; [ openssl_1_1 icu70 gtk3 ];
 
       extraBwrapArgs = [
         # For some reason, I can't do this with the redirect as I did above
